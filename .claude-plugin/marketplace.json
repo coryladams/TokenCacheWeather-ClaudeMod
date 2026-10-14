@@ -1,7 +1,11 @@
 {
-  "name": "augiefra-mods",
-  "owner": { "name": "Eric Cologni" },
-  "metadata": { "description": "Claude Code mods by Eric Cologni." },
+  "name": "coryladams-mods",
+  "owner": {
+    "name": "coryladams"
+  },
+  "metadata": {
+    "description": "Claude Code mods by coryladams (forked from augiefra/claude-mods)."
+  },
   "plugins": [
     {
       "name": "token-weather-usage",
