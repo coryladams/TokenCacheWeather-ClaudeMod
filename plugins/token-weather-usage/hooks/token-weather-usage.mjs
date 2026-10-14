@@ -532,7 +532,7 @@ export function register(on, options) {
     cacheEnv = await cacheEnvOf($);
     turnsKey = TURNS_PREFIX + (await $.session.id());
     await restoreTurns($);
-    const usage = await $.session.usage();
+    const usage = await usageOf($);
     pushReading(usage.context);
     cost = usage.cost?.usd ?? null;
     promptBase = cost;
@@ -653,7 +653,7 @@ export function register(on, options) {
       return result;
     }
     try {
-      const usage = await $.session.usage();
+      const usage = await usageOf($);
       pushReading(usage.context);
       if (usage.cost) {
         cost = usage.cost.usd;
@@ -685,7 +685,7 @@ export function register(on, options) {
       if (Number.isFinite(result.tokensAfter) && result.tokensAfter > 0 && last?.window > 0) {
         pushReading({ tokens: result.tokensAfter, window: last.window });
       } else {
-        pushReading((await $.session.usage()).context);
+        pushReading((await usageOf($)).context);
       }
       compacted = true;
       await saveTurns($);
@@ -1563,7 +1563,9 @@ function drawLine(elements, surface, columns, now) {
         backgroundColor: b.tint[0],
       }),
     );
-    return Box({ flexDirection: "row", alignItems: "center", columnGap: 1, paddingX: 1, children: pills });
+    // A transcript too narrow for every pill (agents running, a side pane open) moves the rest to
+    // a second row instead of cutting them off at the right edge.
+    return Box({ flexDirection: "row", flexWrap: "wrap", alignItems: "center", columnGap: 1, paddingX: 1, children: pills });
   }
   const children = [];
   blocks.forEach((b, i) => {
@@ -1627,6 +1629,27 @@ function lastPromptText() {
 
 
 // ---------- Weather: readings and drawing (Token Weather) ----------
+
+// The usage with the context measured against the auto-compact window when it is on and smaller
+// than the model's (CLAUDE_CODE_AUTO_COMPACT_WINDOW, the settings): the weather and its percent
+// then reach "compact" as the conversation nears its compaction, not the model's limit.
+async function usageOf($) {
+  let usage;
+  try {
+    usage = await $.session.usage({ breakdown: "summary" });
+  } catch {
+    usage = await $.session.usage();
+  }
+  return { ...usage, context: compactWindowOf(usage.context) };
+}
+
+function compactWindowOf(context) {
+  const b = context?.breakdown;
+  const limit = b?.isAutoCompactEnabled ? b.rawMaxTokens : 0;
+  if (!context?.window || !(limit > 0) || limit >= context.window) return context;
+  const { breakdown, ...rest } = context;
+  return { ...rest, window: limit, percent: Math.round(((context.tokens ?? 0) / limit) * 100) };
+}
 
 function pushReading(context) {
   if (!context || !context.window) return;

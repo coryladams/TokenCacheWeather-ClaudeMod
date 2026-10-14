@@ -114,6 +114,9 @@ for (const surface of ["terminal", "desktop"] as const) {
         expect(p.props?.borderStyle).toBe("round");
         expect(p.props?.paddingY).toBe(0);
       }
+      // A narrow transcript moves the pills that do not fit to a second row.
+      const rows = ((await ui.findAll({ type: "Box" })) as any[]).filter((b) => b.props?.flexWrap === "wrap");
+      expect(rows.length).toBe(1);
     } else {
       expect(texts).toContain("☀");
       expect(texts).not.toContain("Clear");
@@ -189,6 +192,26 @@ test("a window that already reset is hidden", async ($, on) => {
   const { texts } = await band($, "terminal");
   expect(texts).not.toContain("5h");
   expect(texts).toContain("7d");
+});
+
+// Auto-compact at 350k on a 1M model: the weather and its percent are against 350k.
+test("context against the auto-compact window", async ($, on) => {
+  world(on);
+  const breakdown = { rawMaxTokens: 350_000, isAutoCompactEnabled: true, autocompactSource: "settings" };
+  on("session.usage", () => ({ value: { startedAt: NOW, context: { tokens: 280_000, window: 1_000_000, percent: 28, breakdown }, rateLimits: LIMITS } }));
+  await $.session.start({ source: "startup", cwd: "/tmp" } as any);
+  const { ui } = await band($, "desktop");
+  expect(await cardOf(ui, "context")).toBe("Storm · 80% of 350k");
+});
+
+// Auto-compact off: the model's window stays.
+test("context against the model's window when auto-compact is off", async ($, on) => {
+  world(on);
+  const breakdown = { rawMaxTokens: 350_000, isAutoCompactEnabled: false, autocompactSource: "settings" };
+  on("session.usage", () => ({ value: { startedAt: NOW, context: { tokens: 280_000, window: 1_000_000, percent: 28, breakdown }, rateLimits: LIMITS } }));
+  await $.session.start({ source: "startup", cwd: "/tmp" } as any);
+  const { ui } = await band($, "desktop");
+  expect(await cardOf(ui, "context")).toBe("Cloudy · 28% of 1M");
 });
 
 for (const surface of ["terminal", "desktop"] as const) {
