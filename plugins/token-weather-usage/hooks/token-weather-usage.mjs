@@ -22,7 +22,7 @@ const TEXT = {
   en: {
     weather: { clear: "Clear", cloudy: "Cloudy", showers: "Showers", storm: "Storm", compact: "Compact soon" },
     percent: (n) => `${n}%`,
-    labels: { five_hour: "5h", seven_day: "7d", spend_limit: "$" },
+    labels: { five_hour: "5h", seven_day: "7d", extra_usage: "$", spend_limit: "$" },
     day: "d",
     contextAlt: (word, percent, window) => `${word} · ${percent} of ${window}`,
     turnsAlt: (n) => `Tokens added by the last ${n} prompts`,
@@ -63,7 +63,7 @@ const TEXT = {
   fr: {
     weather: { clear: "Clair", cloudy: "Nuageux", showers: "Averses", storm: "Orage", compact: "Compacter bientôt" },
     percent: (n) => `${n} %`,
-    labels: { five_hour: "5h", seven_day: "7j", spend_limit: "$" },
+    labels: { five_hour: "5h", seven_day: "7j", extra_usage: "$", spend_limit: "$" },
     day: "j",
     contextAlt: (word, percent, window) => `${word} · ${percent} de ${window}`,
     turnsAlt: (n) => `Tokens ajoutés par les ${n} derniers prompts`,
@@ -193,7 +193,9 @@ const DAY = 24 * HOUR;
 // Length of each window; without one (spend cap), no elapsed-time marker.
 const SPANS = { five_hour: 5 * HOUR, seven_day: 7 * DAY };
 // Display order; an unknown window goes last.
-const ORDER = ["five_hour", "seven_day", "spend_limit"];
+// extra_usage: the spend against the account's usage credits or monthly cap (enterprise accounts,
+// which have no 5-hour or 7-day window); it takes the spend gauge's "$" and its coin.
+const ORDER = ["five_hour", "seven_day", "extra_usage", "spend_limit"];
 // Pace = share used minus share of time elapsed, in points.
 // Above 0: using faster than time; beyond 15, or at 90% used: alert.
 const PACE_ALERT = 15;
@@ -210,7 +212,7 @@ let ticker = null;
 // The cache keeps the start of the conversation for 5 minutes, or 1 hour; each request that
 // reads it starts the time again, counted from the request's start. Once it lapses, the next
 // message writes the whole context again. Mods get the token counts, not the lifetime: it is
-// inferred (Claude Code's rules, then what the traffic shows).
+// inferred (the environment, then what the traffic shows, then Claude Code's default).
 const TTL = { "5m": 5 * MINUTE, "1h": HOUR };
 // Yellow under 10 minutes left.
 const CACHE_SOON = 10 * MINUTE;
@@ -235,7 +237,7 @@ let seenTtl = null;
 // at the input price minus the cache-read price.
 let savedUsd = 0;
 
-// Anthropic first-party list prices, USD per million tokens, as of 2026-09-25: input and cache
+// Anthropic first-party list prices, USD per million tokens, as of 2026-10-12: input and cache
 // read. Cache writes follow from input: 1.25× for the 5-minute lifetime, 2× for 1 hour.
 // Update this table, and its date, when the prices change. A model missing here shows tokens only.
 const PRICES = {
@@ -247,10 +249,11 @@ const PRICES = {
   "claude-opus-4-8": { input: 5, read: 0.5 },
   "claude-opus-4-7": { input: 5, read: 0.5 },
   "claude-opus-4-6": { input: 5, read: 0.5 },
-  "claude-sonnet-5-5": { input: 2, read: 0.2 },
+  "claude-sonnet-5-5": { input: 2, read: 0.1 },
   "claude-sonnet-5": { input: 2, read: 0.2 },
   "claude-sonnet-4-6": { input: 3, read: 0.3 },
   "claude-haiku-4-5": { input: 1, read: 0.1 },
+  "claude-haiku-5-5": { input: 0.1, read: 0.01, over: { above: 100_000, input: 0.5, read: 0.05 } }
 };
 // Environment switches read at session start.
 let cacheEnv = {};
@@ -365,6 +368,7 @@ export function register(on, options) {
     // The cache countdown: a redraw only when its text changes.
     // and the agents running, which start and end between turns.
     cacheTicker = $.clock.every(10_000, async () => {
+      cacheEnv = await cacheEnvOf($);
       const key = cacheText(cacheState(await $.clock.now()));
       const changed = await refreshAgents($);
       if (key !== cacheKey || changed) {
@@ -391,6 +395,7 @@ export function register(on, options) {
     const at = await $.clock.now();
     const result = yield* next(e);
     if (result?.usage) {
+      cacheEnv = await cacheEnvOf($);
       recordRequest(at, result.usage, e.model);
       // The request may have started an agent.
       await refreshAgents($);
@@ -661,7 +666,7 @@ function recordRequest(at, usage, model) {
     else if (missed && gap > TTL["5m"] && gap < TTL["1h"] && cur.model === prev.model && promptOf(cur) >= promptOf(prev)) seenTtl = "5m";
     if (missed) cur.cause = cur.model !== prev.model ? "model" : gap >= ttlMs() ? "lapsed" : "prefix";
   }
-  const price = priceOf(cur.model);
+  const price = priceAt(priceOf(cur.model), promptOf(cur));
   if (price) savedUsd += (cur.read * (price.input - price.read)) / 1e6;
   cache = cur;
 }
@@ -675,20 +680,29 @@ function priceOf(model) {
   return Object.prototype.hasOwnProperty.call(PRICES, id) ? PRICES[id] : null;
 }
 
+// The tier a prompt of this many tokens pays: the "over" prices above its threshold, else the base.
+function priceAt(price, tokens) {
+  return price && price.over && tokens > price.over.above ? price.over : price;
+}
+
 // Price of a cache write, per million tokens, for the lifetime in use.
 function writePrice(price, ttl) {
   return (ttl === TTL["1h"] ? 2 : 1.25) * price.input;
 }
 
-// Claude Code's rules for the main conversation, after what the traffic showed.
+// The main conversation's lifetime, in this order: the environment (the variable Claude Code reads
+// first, then the two switches), what the traffic showed, then Claude Code's default. The default
+// is 1 hour, which is what a subscription gets: it is not read from the account, so an enterprise
+// account without 5-hour or 7-day limits gets it too. Over a plan's limits, Claude Code bills usage
+// credits and the lifetime drops to 5 minutes.
 function ttlMs() {
-  if (seenTtl) return TTL[seenTtl];
+  const ttl = String(cacheEnv.ttl ?? "").trim().toLowerCase();
+  if (ttl === "5m" || ttl === "1h") return TTL[ttl];
   if (cacheEnv.force5m) return TTL["5m"];
-  if (cacheEnv.ttl === "5m" || cacheEnv.ttl === "1h") return TTL[cacheEnv.ttl];
   if (cacheEnv.enable1h) return TTL["1h"];
-  // A Claude subscription within its plan usage gets 1 hour; usage credits or an API key, 5 minutes.
+  if (seenTtl) return TTL[seenTtl];
   const plan = limits.list.filter((l) => l.kind === "five_hour" || l.kind === "seven_day");
-  return plan.length > 0 && plan.every((l) => l.percentUsed < 100) ? TTL["1h"] : TTL["5m"];
+  return plan.some((l) => l.percentUsed >= 100) ? TTL["5m"] : TTL["1h"];
 }
 
 // What the cache block shows: { tone, value, detail, urgent, stake, advice, tip }; null when
@@ -703,7 +717,7 @@ function cacheState(now) {
   const ttl = ttlMs();
   // In dollars, at list prices, for the context the next message reads: from the cache, and
   // written again once it lapsed. Null for a model missing from PRICES: tokens only.
-  const price = priceOf(cache.model);
+  const price = priceAt(priceOf(cache.model), tokens);
   const costs = price ? { read: (tokens * price.read) / 1e6, rewrite: (tokens * writePrice(price, ttl)) / 1e6 } : null;
   // Expired: say what the next message writes again, and the way out: from 300k a new thread
   // (it avoids rewriting the whole context at full price), from 100k /compact. In the app the
@@ -721,7 +735,8 @@ function cacheState(now) {
   // A miss: what writing the cache again cost above a message served by it.
   if (cache.cause) {
     const cause = T.causes[cache.cause];
-    const surcharge = price ? ((cache.write ?? 0) * (writePrice(price, ttl) - price.read)) / 1e6 : null;
+    const missPrice = priceAt(priceOf(cache.model), promptOf(cache));
+    const surcharge = missPrice ? ((cache.write ?? 0) * (writePrice(missPrice, ttl) - missPrice.read)) / 1e6 : null;
     const extra = surcharge !== null && surcharge >= 0.01 ? ` · +${T.money(surcharge)}` : "";
     const tip = T.tips.missed(T.percent(share), cause, short(cache.write ?? 0), surcharge !== null && approx(surcharge));
     return { tone: "fast", value: T.percent(share), detail: `${T.missed} · ${cause}${extra}`, tip };

@@ -688,6 +688,49 @@ test("cache tooltip, warm, English: lifetime assumed", async ($, on) => {
   );
 });
 
+// An account without 5-hour or 7-day limits (enterprise): no plan to read the lifetime from.
+test("cache: a plan-less account gets the 1-hour default, assumed", async ($, on) => {
+  world(on);
+  withUsage(on, []);
+  engineStep(on, [BIG_HIT]);
+  await $.session.start({ source: "startup", cwd: "/tmp" } as any);
+  await step($, BIG_HIT);
+  await step($, BIG_HIT);
+  expect(await boltTip((await band($, "desktop")).ui)).toContain(`Cache warm until ${at(NOW + 3_600_000)} (1-hour lifetime, assumed).`);
+});
+
+test("cache: the environment sets the lifetime, ahead of the account", async ($, on) => {
+  world(on, { CLAUDE_CODE_PROMPT_CACHE_TTL: "5m" });
+  withUsage(on, LIMITS, BIG);
+  engineStep(on, [BIG_HIT]);
+  await $.session.start({ source: "startup", cwd: "/tmp" } as any);
+  await step($, BIG_HIT);
+  await step($, BIG_HIT);
+  expect(await boltTip((await band($, "desktop")).ui)).toContain(`Cache warm until ${at(NOW + 300_000)} (5-minute lifetime, assumed).`);
+});
+
+test("cache: over the plan's limits, the lifetime is 5 minutes", async ($, on) => {
+  world(on);
+  withUsage(on, [{ kind: "five_hour", percentUsed: 100, resetsAt: new Date(NOW + 3_600_000).toISOString() }], BIG);
+  engineStep(on, [BIG_HIT]);
+  await $.session.start({ source: "startup", cwd: "/tmp" } as any);
+  await step($, BIG_HIT);
+  await step($, BIG_HIT);
+  expect(await boltTip((await band($, "desktop")).ui)).toContain(`Cache warm until ${at(NOW + 300_000)} (5-minute lifetime, assumed).`);
+});
+
+// Enterprise spend (extra_usage) takes the place of the 5-hour and 7-day gauges.
+test("band: enterprise spend shows as the $ gauge", async ($, on) => {
+  world(on);
+  withUsage(on, [{ kind: "extra_usage", percentUsed: 42, resetsAt: new Date(NOW + 20 * 86_400_000).toISOString() }]);
+  await $.session.start({ source: "startup", cwd: "/tmp" } as any);
+  const { texts } = await band($, "terminal");
+  expect(texts).toContain("$");
+  expect(texts).toContain("42%");
+  expect(texts).not.toContain("5h");
+  expect(texts).not.toContain("7d");
+});
+
 test("cache: under 10 minutes and under 90% served, the stake after the time", async ($, on) => {
   const clock = world(on);
   withUsage(on, LIMITS);
