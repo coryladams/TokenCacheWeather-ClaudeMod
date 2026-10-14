@@ -2,15 +2,15 @@
 
 One band above the Claude Code prompt: the context in tokens, your 5-hour and 7-day limits against the clock, whether the prompt cache is still warm, what the session and the last prompt cost, and which agents are running.
 
-![One session, step by step](https://raw.githubusercontent.com/augiefra/claude-mods/main/docs/band-story.gif)
+![One session, step by step](https://raw.githubusercontent.com/coryladams/TokenCacheWeather-ClaudeMod/main/docs/band-story.gif)
 
-![All clear](https://raw.githubusercontent.com/augiefra/claude-mods/main/docs/situations/calm.png)
+![All clear](https://raw.githubusercontent.com/coryladams/TokenCacheWeather-ClaudeMod/main/docs/situations/calm.png)
 
-![Agents at work](https://raw.githubusercontent.com/augiefra/claude-mods/main/docs/situations/agents.png)
+![Agents at work](https://raw.githubusercontent.com/coryladams/TokenCacheWeather-ClaudeMod/main/docs/situations/agents.png)
 
-![Cache about to lapse](https://raw.githubusercontent.com/augiefra/claude-mods/main/docs/situations/soon.png)
+![Cache about to lapse](https://raw.githubusercontent.com/coryladams/TokenCacheWeather-ClaudeMod/main/docs/situations/soon.png)
 
-![Slow down](https://raw.githubusercontent.com/augiefra/claude-mods/main/docs/situations/alert.png)
+![Slow down](https://raw.githubusercontent.com/coryladams/TokenCacheWeather-ClaudeMod/main/docs/situations/alert.png)
 
 - **Context**: tokens in the context with a weather icon (hover the pill for the weather and the share of the window), one bar per recent prompt, the last prompt's change.
 - **5h / 7d**: the share of your account's limits already used, in green, yellow or red by pace. The gap with the time elapsed is hatched: grey while you have margin, in the bar's color when you use faster than time passes. Then the time left; in the app, hover the 5-hour pill for the reset time (machine's time zone). When the week's recent pace would use up the 7-day limit before its reset, a warning follows the bar, `⚠ out Fri evening`, amber, red within a day; its hover card says the pace it was read from. An estimate, shown after the week's first day and from 15% used.

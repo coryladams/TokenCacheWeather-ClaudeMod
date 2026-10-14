@@ -446,8 +446,8 @@ test("cache: Haiku 5.5 priced by prompt size", async ($, on) => {
   expect(texts).not.toContain(`${en$(rewriteCost(107_000, "claude-haiku-5-5"))} at stake`);
 });
 
-test("cache: 5 minutes on an API key (no plan window)", async ($, on) => {
-  world(on);
+test("cache: 5 minutes when CLAUDE_CODE_PROMPT_CACHE_TTL says so (no plan window)", async ($, on) => {
+  world(on, { CLAUDE_CODE_PROMPT_CACHE_TTL: "5m" });
   withUsage(on, []);
   engineStep(on, [HIT]);
   await $.session.start({ source: "startup", cwd: "/tmp" } as any);
@@ -801,7 +801,7 @@ test("cache: the environment sets the lifetime, ahead of the account", async ($,
   await $.session.start({ source: "startup", cwd: "/tmp" } as any);
   await step($, BIG_HIT);
   await step($, BIG_HIT);
-  expect(await boltTip((await band($, "desktop")).ui)).toContain(`Cache warm until ${at(NOW + 300_000)} (5-minute lifetime, assumed).`);
+  expect(await boltTip((await band($, "desktop")).ui)).toContain(`The cache expires at ${at(NOW + 300_000)}.`);
 });
 
 test("cache: over the plan's limits, the lifetime is 5 minutes", async ($, on) => {
@@ -811,7 +811,7 @@ test("cache: over the plan's limits, the lifetime is 5 minutes", async ($, on) =
   await $.session.start({ source: "startup", cwd: "/tmp" } as any);
   await step($, BIG_HIT);
   await step($, BIG_HIT);
-  expect(await boltTip((await band($, "desktop")).ui)).toContain(`Cache warm until ${at(NOW + 300_000)} (5-minute lifetime, assumed).`);
+  expect(await boltTip((await band($, "desktop")).ui)).toContain(`The cache expires at ${at(NOW + 300_000)}.`);
 });
 
 // Enterprise spend (extra_usage) takes the place of the 5-hour and 7-day gauges.

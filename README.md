@@ -1,6 +1,6 @@
 # claude-mods
 
-[Claude Code](https://claude.dev/blog/getting-started-with-claude-code-mods/) mods by Eric Cologni.
+[Claude Code](https://claude.dev/blog/getting-started-with-claude-code-mods/) mods by coryladams, forked from [augiefra/claude-mods](https://github.com/augiefra/claude-mods) by Eric Cologni. This fork works on enterprise accounts (no 5-hour or 7-day limits, no 5-minute cache assumption) and shows their usage-credit spend.
 
 ## token-weather-usage
 
@@ -48,11 +48,24 @@ Labels are in English, French or Russian. By default (`auto`) the mod follows `L
 
 ### Install
 
+In Claude Code (CLI, desktop app or IDE), on any account (Pro, Max, Team or Enterprise):
+
 ```
-/plugin marketplace add augiefra/claude-mods
-/plugin install token-weather-usage@augiefra-mods
+/plugin marketplace add coryladams/TokenCacheWeather-ClaudeMod
+/plugin install token-weather-usage@coryladams-mods
 /reload-plugins
 ```
+
+Or from a shell:
+
+```bash
+claude plugin marketplace add coryladams/TokenCacheWeather-ClaudeMod
+claude plugin install token-weather-usage@coryladams-mods
+```
+
+`coryladams/TokenCacheWeather-ClaudeMod` is the GitHub repo that holds the marketplace; `coryladams-mods` is the marketplace name declared in [.claude-plugin/marketplace.json](.claude-plugin/marketplace.json). To pick up new versions: `/plugin marketplace update coryladams-mods`.
+
+**Enterprise accounts.** Plugins are installed per machine and per Claude Code config folder, not per account. If you keep a personal and a work setup apart (for example with `CLAUDE_CONFIG_DIR`), run the commands above in the work one too. If your organization's managed settings restrict marketplaces (`strictKnownMarketplaces`) or plugins, `marketplace add` is refused: ask your admin to allow `coryladams/TokenCacheWeather-ClaudeMod`. The cache lifetime defaults to 1 hour; if your organization uses 5 minutes, set `CLAUDE_CODE_PROMPT_CACHE_TTL=5m`.
 
 If the line does not show up, restart Claude Code. A mod is code that runs inside Claude Code with the same access as Claude Code: read it before installing. This one is a single file, [token-weather-usage.mjs](plugins/token-weather-usage/hooks/token-weather-usage.mjs).
 
