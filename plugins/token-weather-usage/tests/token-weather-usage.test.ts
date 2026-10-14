@@ -204,6 +204,16 @@ test("context against the auto-compact window", async ($, on) => {
   expect(await cardOf(ui, "context")).toBe("Storm · 80% of 350k");
 });
 
+// Reopened with the same context, stored against the model's window: the auto-compact window wins.
+test("a stored reading of the same size takes the auto-compact window", async ($, on) => {
+  world(on, {}, { "turns:session-1": { at: NOW - 60_000, readings: [{ tokens: 115_000, window: 1_000_000, percent: 12 }] } });
+  const breakdown = { rawMaxTokens: 350_000, isAutoCompactEnabled: true, autocompactSource: "settings" };
+  on("session.usage", () => ({ value: { startedAt: NOW, context: { tokens: 115_000, window: 1_000_000, percent: 12, breakdown }, rateLimits: LIMITS } }));
+  await $.session.start({ source: "startup", cwd: "/tmp" } as any);
+  const { ui } = await band($, "desktop");
+  expect(await cardOf(ui, "context")).toBe("Cloudy · 33% of 350k");
+});
+
 // Auto-compact off: the model's window stays.
 test("context against the model's window when auto-compact is off", async ($, on) => {
   world(on);

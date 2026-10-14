@@ -1658,8 +1658,12 @@ function pushReading(context) {
   // The start reading is 0 before the first answer: drop it as soon as a real one arrives.
   readings = readings.filter((r) => r.tokens > 0);
   // A reopened session reads the same context again: no duplicate reading, so no false empty bar.
+  // Its window may have changed (the auto-compact window set since): the last reading takes it.
   const last = readings[readings.length - 1];
-  if (last && last.tokens === tokens && tokens > 0) return;
+  if (last && last.tokens === tokens && tokens > 0) {
+    readings[readings.length - 1] = { tokens, window: context.window, percent };
+    return;
+  }
   readings.push({ tokens, window: context.window, percent });
   if (readings.length > HISTORY) readings = readings.slice(-HISTORY);
 }
