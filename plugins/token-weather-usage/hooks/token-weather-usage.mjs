@@ -325,6 +325,9 @@ function weatherSvg(id) {
 
 // Context readings: { tokens, window, percent }, oldest first.
 let readings = [];
+// The last reading was taken by a request of the turn still running: the next request, then the
+// turn's end, replace it rather than adding one, so the bars stay one per turn.
+let midTurn = false;
 // Each session's readings are kept in $.store, so the bars come back after a restart.
 const TURNS_PREFIX = "turns:";
 const TURNS_KEEP_MS = 8 * 24 * 3_600_000;
@@ -517,6 +520,7 @@ export function register(on, options) {
     cacheTicker?.cancel();
     T = TEXT[await languageOf($, language)];
     readings = [];
+    midTurn = false;
     limits = { at: 0, list: [] };
     cache = null;
     compacted = false;
@@ -634,6 +638,8 @@ export function register(on, options) {
     if (result?.usage) {
       cacheEnv = await cacheEnvOf($);
       recordRequest(at, result.usage, e.model);
+      // A long turn shows its context growing, not the size it had when it started.
+      await stepReading($);
       // The request may have started an agent.
       await refreshAgents($);
       $.ui.invalidate("ui.render");
@@ -654,6 +660,9 @@ export function register(on, options) {
     }
     try {
       const usage = await usageOf($);
+      // The turn's own reading replaces its last request's, unless it has none (0 tokens).
+      if (midTurn && usage.context?.tokens > 0) readings.pop();
+      midTurn = false;
       pushReading(usage.context);
       if (usage.cost) {
         cost = usage.cost.usd;
@@ -688,6 +697,7 @@ export function register(on, options) {
         pushReading((await usageOf($)).context);
       }
       compacted = true;
+      midTurn = false;
       await saveTurns($);
       $.ui.invalidate("ui.render");
     } catch {
@@ -1651,10 +1661,13 @@ function compactWindowOf(context) {
   return { ...rest, window: limit, percent: Math.round(((context.tokens ?? 0) / limit) * 100) };
 }
 
+// True when the reading was added, false when it changed the last one or was dropped.
 function pushReading(context) {
-  if (!context || !context.window) return;
+  if (!context || !context.window) return false;
   const tokens = context.tokens ?? 0;
   const percent = Math.round(context.percent ?? (tokens / context.window) * 100);
+  // A reading of 0 before the transcript is read (a reload mid-session) never hides a real one.
+  if (tokens === 0 && readings.some((r) => r.tokens > 0)) return false;
   // The start reading is 0 before the first answer: drop it as soon as a real one arrives.
   readings = readings.filter((r) => r.tokens > 0);
   // A reopened session reads the same context again: no duplicate reading, so no false empty bar.
@@ -1662,10 +1675,21 @@ function pushReading(context) {
   const last = readings[readings.length - 1];
   if (last && last.tokens === tokens && tokens > 0) {
     readings[readings.length - 1] = { tokens, window: context.window, percent };
-    return;
+    return false;
   }
   readings.push({ tokens, window: context.window, percent });
   if (readings.length > HISTORY) readings = readings.slice(-HISTORY);
+  return true;
+}
+
+// The context after a main-loop request; a reading that fails waits for the next one.
+async function stepReading($) {
+  try {
+    const context = (await usageOf($)).context;
+    if (!(context?.tokens > 0)) return;
+    if (midTurn) readings.pop();
+    midTurn = pushReading(context);
+  } catch {}
 }
 
 function forecastFor(percent) {

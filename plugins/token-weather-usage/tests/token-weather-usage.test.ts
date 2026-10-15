@@ -214,6 +214,40 @@ test("a stored reading of the same size takes the auto-compact window", async ($
   expect(await cardOf(ui, "context")).toBe("Cloudy · 33% of 350k");
 });
 
+// Reloaded mid-session, before the transcript gives a size: the stored reading stays.
+test("a reading of 0 at start does not hide the stored one", async ($, on) => {
+  world(on, {}, { "turns:session-1": { at: NOW - 60_000, readings: [{ tokens: 150_000, window: 350_000, percent: 43 }, { tokens: 207_000, window: 350_000, percent: 59 }] } });
+  withUsage(on, LIMITS, { tokens: 0, window: 350_000, percent: 0 });
+  await $.session.start({ source: "resume", cwd: "/tmp" } as any);
+  const { texts } = await band($, "terminal");
+  expect(texts).toContain("207k");
+  expect(texts).not.toContain("0");
+});
+
+// A long turn: each request updates the context; the turn's end replaces it, one reading per turn.
+test("the context grows during a long turn", async ($, on) => {
+  world(on);
+  let context = { tokens: 0, window: 350_000, percent: 0 };
+  on("session.usage", () => ({ value: { startedAt: NOW, context, rateLimits: LIMITS } }));
+  on("turn.step", async function* () {
+    return { turnId: "t", index: 0, answer: "", toolUses: [], stopReason: "tool_use", usage: HIT };
+  });
+  on("turn.complete", () => ({ text: "" }));
+  await $.session.start({ source: "resume", cwd: "/tmp" } as any);
+  context = { tokens: 120_000, window: 350_000, percent: 34 };
+  await step($, HIT);
+  expect((await band($, "terminal")).texts).toContain("120k");
+  context = { tokens: 207_000, window: 350_000, percent: 59 };
+  await step($, HIT);
+  expect((await band($, "terminal")).texts).toContain("207k");
+  context = { tokens: 210_000, window: 350_000, percent: 60 };
+  await ($ as any).turn.complete({ answer: "ok" } as any);
+  const { texts } = await band($, "terminal");
+  expect(texts).toContain("210k");
+  // A single turn: still no trend.
+  expect(texts.join(" ")).not.toContain("turns");
+});
+
 // Auto-compact off: the model's window stays.
 test("context against the model's window when auto-compact is off", async ($, on) => {
   world(on);
